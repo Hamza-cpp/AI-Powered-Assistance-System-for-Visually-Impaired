@@ -1,0 +1,351 @@
+[
+    {
+        "id": "f6f2187d.f17ca8",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "4c6d5c8b5dedfe1e",
+        "type": "http request",
+        "z": "f6f2187d.f17ca8",
+        "name": "predict obstacle",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://localhost:5000/predict",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 680,
+        "y": 280,
+        "wires": [
+            [
+                "ade905f8e53e0cb7"
+            ]
+        ]
+    },
+    {
+        "id": "3a846992bb4c685a",
+        "type": "file in",
+        "z": "f6f2187d.f17ca8",
+        "name": "Load image",
+        "filename": "payload",
+        "filenameType": "msg",
+        "format": "",
+        "chunk": false,
+        "sendError": false,
+        "encoding": "utf8",
+        "allProps": false,
+        "x": 290,
+        "y": 280,
+        "wires": [
+            [
+                "a1b5e175fb44a627"
+            ]
+        ]
+    },
+    {
+        "id": "a1b5e175fb44a627",
+        "type": "function",
+        "z": "f6f2187d.f17ca8",
+        "name": "convert the img",
+        "func": "msg.headers = {\n    \"Content-Type\": \"multipart/form-data\"\n};\nmsg.payload = {\n    image: {\n        value: Buffer.from(msg.payload, 'base64'),\n        options : { \n            filename: 'image.jpg',\n            contentType: 'image/jpeg'\n        }\n    }\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 480,
+        "y": 280,
+        "wires": [
+            [
+                "4c6d5c8b5dedfe1e"
+            ]
+        ]
+    },
+    {
+        "id": "ade905f8e53e0cb7",
+        "type": "function",
+        "z": "f6f2187d.f17ca8",
+        "name": "get predicted_class",
+        "func": "\nif (msg.payload.predicted_class ) {\n    msg.payload = `A '${msg.payload.predicted_class}' Has Been Detected !!`;\n} else if (msg.payload.predicted_probability > 0.8) {\n    msg.payload = `probability is low the 0.8 !!`;\n} else {\n    msg.payload = \"No object detected!!\";\n}\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 250,
+        "y": 420,
+        "wires": [
+            [
+                "be773dfa3d42a653",
+                "deb5d6cf655a754f"
+            ]
+        ]
+    },
+    {
+        "id": "be773dfa3d42a653",
+        "type": "debug",
+        "z": "f6f2187d.f17ca8",
+        "name": "predicted class",
+        "active": true,
+        "tosidebar": true,
+        "console": true,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 510,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "74e4feb39b0245fb",
+        "type": "inject",
+        "z": "f6f2187d.f17ca8",
+        "name": "Inject Video",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "video-input",
+        "payload": "{}",
+        "payloadType": "json",
+        "x": 130,
+        "y": 220,
+        "wires": [
+            [
+                "fd3ca02bfd42ae55"
+            ]
+        ]
+    },
+    {
+        "id": "bbc56d234fca8d20",
+        "type": "ffmpeg",
+        "z": "f6f2187d.f17ca8",
+        "name": "process video",
+        "outputs": 2,
+        "cmdPath": "",
+        "cmdArgs": "[]",
+        "cmdOutputs": 1,
+        "killSignal": "SIGHUP",
+        "x": 500,
+        "y": 160,
+        "wires": [
+            [
+                "a5883f10aab01815"
+            ],
+            [
+                "2d5f4c78373e37b7"
+            ]
+        ]
+    },
+    {
+        "id": "2d5f4c78373e37b7",
+        "type": "function",
+        "z": "f6f2187d.f17ca8",
+        "name": "Frame Processor",
+        "func": "// Frame Processor Function\nif (msg.topic.endsWith('/stdout')) {\n    // Check for JPEG magic numbers (FF D8 FF)\n    const isJPEG = msg.payload.length > 3 && \n                   msg.payload[0] === 0xFF && \n                   msg.payload[1] === 0xD8 && \n                   msg.payload[2] === 0xFF;\n    \n    // Process only valid JPEG frames\n    if (isJPEG && msg.payload.length > 10000) {  // Minimum size threshold\n        msg.headers = {\n            \"Content-Type\": \"multipart/form-data\"\n        };\n        \n        msg.payload = {\n            image: {\n                value: msg.payload,\n                options: { \n                    filename: 'image.jpg',\n                    contentType: 'image/jpeg'\n                }\n            }\n        };\n        \n        return msg;\n    } else {\n        node.warn(`Skipping invalid frame of size: ${msg.payload.length}`);\n        return null;\n    }\n} else if (msg.topic.endsWith('/status')) {\n    node.warn(`FFmpeg Status: ${JSON.stringify(msg.payload)}`);\n    return null;\n}",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 690,
+        "y": 200,
+        "wires": [
+            [
+                "4c6d5c8b5dedfe1e"
+            ]
+        ]
+    },
+    {
+        "id": "8011ddde9bbb75f0",
+        "type": "inject",
+        "z": "f6f2187d.f17ca8",
+        "name": "inject image",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "image-input",
+        "payload": "imgs/img5.jpg",
+        "payloadType": "str",
+        "x": 130,
+        "y": 280,
+        "wires": [
+            [
+                "3a846992bb4c685a"
+            ]
+        ]
+    },
+    {
+        "id": "fd3ca02bfd42ae55",
+        "type": "function",
+        "z": "f6f2187d.f17ca8",
+        "name": "Start FFmpeg",
+        "func": "// FFmpeg Start Command\nmsg.action = {\n    command: 'start',\n    args: [\n        '-i', 'vid1.mp4',\n        '-f', 'image2pipe',\n        '-vcodec', 'mjpeg',\n        '-q:v', '1',                // Highest quality\n        '-vf', 'fps=1,scale=-1:480',  // Consistent frame size\n        '-huffman', 'optimal',       // Better JPEG encoding\n        '-pred', '2',               // Better frame prediction\n        '-analyzeduration', '2147483647',\n        '-probesize', '2147483647',\n        '-'\n    ]\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 300,
+        "y": 220,
+        "wires": [
+            [
+                "bbc56d234fca8d20"
+            ]
+        ]
+    },
+    {
+        "id": "a5883f10aab01815",
+        "type": "debug",
+        "z": "f6f2187d.f17ca8",
+        "name": "ffmpeg status",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 680,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "264cc31cc161d0e5",
+        "type": "inject",
+        "z": "f6f2187d.f17ca8",
+        "name": "kill ffmpeg",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "{}",
+        "payloadType": "json",
+        "x": 120,
+        "y": 120,
+        "wires": [
+            [
+                "b85eaf39d92fd577"
+            ]
+        ]
+    },
+    {
+        "id": "b85eaf39d92fd577",
+        "type": "function",
+        "z": "f6f2187d.f17ca8",
+        "name": "Stop FFmpeg",
+        "func": "msg.action = {\n    command: 'stop',\n    signal: 'SIGTERM'\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 300,
+        "y": 120,
+        "wires": [
+            [
+                "bbc56d234fca8d20"
+            ]
+        ]
+    },
+    {
+        "id": "deb5d6cf655a754f",
+        "type": "ui_audio",
+        "z": "f6f2187d.f17ca8",
+        "name": "play audio",
+        "group": "bdf78bf70c72e674",
+        "voice": "Microsoft David - English (United States)",
+        "always": "",
+        "x": 510,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "46acc2420b778c31",
+        "type": "ui_button",
+        "z": "f6f2187d.f17ca8",
+        "name": "",
+        "group": "bdf78bf70c72e674",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "passthru": false,
+        "label": "button",
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "className": "",
+        "icon": "",
+        "payload": "",
+        "payloadType": "str",
+        "topic": "topic",
+        "topicType": "msg",
+        "x": 110,
+        "y": 60,
+        "wires": [
+            [
+                "b85eaf39d92fd577"
+            ]
+        ]
+    },
+    {
+        "id": "bdf78bf70c72e674",
+        "type": "ui_group",
+        "name": "Default",
+        "tab": "d9ee2655b47fe5cd",
+        "order": 1,
+        "disp": true,
+        "width": "6",
+        "collapse": false,
+        "className": ""
+    },
+    {
+        "id": "d9ee2655b47fe5cd",
+        "type": "ui_tab",
+        "name": "Home",
+        "icon": "dashboard",
+        "disabled": false,
+        "hidden": false
+    }
+]
